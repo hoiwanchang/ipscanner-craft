@@ -137,6 +137,11 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      # beforeBuildCommand was removed from tauri.conf.json (tauri CLI runs
+      # hooks with cwd=frontend, doubling --prefix paths); build dist here.
+      - name: build frontend bundle
+        run: npm --prefix frontend run build
+
       - name: init android project
         run: npx --yes @tauri-apps/cli@^2 android init
 

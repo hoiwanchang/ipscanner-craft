@@ -1,12 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "ipscanner-craft",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "identifier": "com.hoiwanchang.ipscannercraft",
   "build": {
     "frontendDist": "./frontend/dist",
     "beforeDevCommand": "npm --prefix frontend run dev",
-    "beforeBuildCommand": "npm --prefix frontend run build",
     "devUrl": "http://localhost:5173"
   },
   "app": {
