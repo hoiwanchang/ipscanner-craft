@@ -55,7 +55,15 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      # tauri-action sees the root package.json ("tauri" script) and runs
+      # `npm run tauri build`, so @tauri-apps/cli must exist in root
+      # node_modules or the hook dies with `sh: tauri: not found`.
+      - name: install root deps (tauri cli)
+        run: npm ci
 
       - name: install frontend deps
         working-directory: frontend
@@ -126,7 +134,9 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
 
       - uses: actions/setup-java@v4
         with:
@@ -154,7 +164,7 @@ jobs:
       # ("npm run -- tauri android build --target <abi>"); make sure the tauri
       # bin resolves from root node_modules/.bin.
       - name: install root tauri cli
-        run: npm install --no-audit --no-fund
+        run: npm ci
 
       # beforeBuildCommand was removed from tauri.conf.json (tauri CLI runs
       # hooks with cwd=frontend, doubling --prefix paths); build dist here.
@@ -169,13 +179,34 @@ jobs:
           NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: npx --yes @tauri-apps/cli@^2 android build --apk --split-per-abi
 
+      # gradle release builds are unsigned -> installable only after signing.
+      # Sign with a throwaway debug keystore (standard Android debug cert) so
+      # the APKs sideload over adb; a real upload keystore can replace this
+      # once Kane registers one.
+      - name: sign apks (debug keystore)
+        shell: bash
+        run: |
+          sudo apt-get update && sudo apt-get install -y zipalign
+          keytool -genkeypair -keystore debug.keystore -storepass android \
+            -alias androiddebugkey -keypass android -dname "CN=Debug" \
+            -keyalg RSA -keysize 2048 -validity 10950
+          APKSIGNER=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)/apksigner
+          mkdir -p signed
+          find gen -type f -name "*.apk" -path "*/release/*" | while read a; do
+            n=$(basename "$a" .apk)
+            zipalign -f 4 "$a" "signed/$n-aligned.apk"
+            "$APKSIGNER" sign --ks debug.keystore --ks-pass pass:android \
+              --ks-key-alias androiddebugkey "signed/$n-aligned.apk"
+            mv "signed/$n-aligned.apk" "signed/$n-debug-signed.apk"
+          done
+          ls -la signed
+          test "$(ls signed/*.apk 2>/dev/null | wc -l)" -ge 4 || { echo "expected 4 signed APKs"; exit 1; }
+
       - name: stage apks
         shell: bash
         run: |
           mkdir -p dist-android
-          # flat layout puts the project at repo root (gen/android), standard at
-          # src-tauri/gen/android; search both.
-          find . -path ./target -prune -o -type f -name "*.apk" -print -exec cp {} dist-android/ \;
+          cp signed/*.apk dist-android/
           ls -la dist-android
           test -n "$(ls -A dist-android)" || { echo "no APK produced"; exit 1; }
 
