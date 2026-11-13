@@ -88,8 +88,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          # Repo root: tauri.conf.json lives here. Without this the action
+          # auto-detects frontend/ as the project and runs beforeBuildCommand
+          # from there, doubling the path (frontend/frontend/package.json).
+          projectPath: .
           args: --target ${{ matrix.target }}
-          uploadRawBundle: true
 
       - name: attach CLI/MCP binaries to the release draft
         uses: softprops/action-gh-release@v2
@@ -117,7 +120,9 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
+      # v3 breaks on current ubuntu-latest: sdkmanager 16.x dropped the
+      # legacy 'tools' package the action tries to install. v4 fixes this.
+      - uses: android-actions/setup-android@v4
 
       - uses: nttld/setup-ndk@v1
         id: setup-ndk
