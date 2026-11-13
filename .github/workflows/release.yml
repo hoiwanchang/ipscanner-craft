@@ -9,6 +9,11 @@ on:
 env:
   NODE_VERSION: 22
 
+# Required by tauri-action / action-gh-release to create + upload the
+# GitHub Release (default GITHUB_TOKEN is read-only for contents).
+permissions:
+  contents: write
+
 jobs:
   # Desktop installers (MSI/NSIS, deb/rpm/AppImage, DMG) + plain CLI/MCP
   # binaries + a Windows portable zip, all attached to one GitHub Release.
@@ -25,7 +30,10 @@ jobs:
             target: x86_64-unknown-linux-gnu
             plain_target: x86_64-unknown-linux-gnu
           - os: macos-latest
-            target: universal-apple-darwin
+            # arm64-only dmg: cargo cannot produce universal builds of the
+            # extra CLI/MCP bins, and the bundler copies every [[bin]] from
+            # the target dir (universal lookup -> missing ipscanner-craft-cli).
+            target: aarch64-apple-darwin
             plain_target: aarch64-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:

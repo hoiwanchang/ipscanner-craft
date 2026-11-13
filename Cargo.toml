@@ -1,6 +1,6 @@
 [package]
 name = "ipscanner-craft"
-version = "1.0.2"
+version = "1.0.3"
 description = "Fast, portable IP range and CIDR network scanner with GUI, CLI and MCP server"
 authors = ["Kane Chang"]
 edition = "2021"

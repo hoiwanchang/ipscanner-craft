@@ -351,7 +351,10 @@ pub fn run() {
                 window = window.data_directory(dir);
             }
             if headless_check {
-                window = window.focused(false);
+                #[cfg(desktop)]
+                {
+                    window = window.focused(false);
+                }
                 #[cfg(windows)]
                 {
                     window = window.always_on_bottom(true);
