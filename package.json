@@ -1,0 +1,12 @@
+{
+  "name": "ipscanner-craft-workspace",
+  "private": true,
+  "version": "1.0.4",
+  "description": "Root workspace wrapper: gradle's rust plugin re-invokes the tauri CLI through this package.json (npm run tauri) during android builds.",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

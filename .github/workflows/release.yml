@@ -100,6 +100,11 @@ jobs:
           # auto-detects frontend/ as the project and runs beforeBuildCommand
           # from there, doubling the path (frontend/frontend/package.json).
           projectPath: .
+          # Required for the action to upload the installers it built —
+          # without tagName it logs "No releaseId or tagName provided,
+          # skipping all uploads...".
+          tagName: ${{ github.ref_name }}
+          releaseDraft: true
           args: --target ${{ matrix.target }}
 
       - name: attach CLI/MCP binaries to the release draft
@@ -144,6 +149,12 @@ jobs:
       - name: install frontend deps
         working-directory: frontend
         run: npm ci
+
+      # gradle's rust plugin re-enters the tauri CLI via the ROOT package.json
+      # ("npm run -- tauri android build --target <abi>"); make sure the tauri
+      # bin resolves from root node_modules/.bin.
+      - name: install root tauri cli
+        run: npm install --no-audit --no-fund
 
       # beforeBuildCommand was removed from tauri.conf.json (tauri CLI runs
       # hooks with cwd=frontend, doubling --prefix paths); build dist here.
