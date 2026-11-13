@@ -1,0 +1,158 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: 22
+
+jobs:
+  # Desktop installers (MSI/NSIS, deb/rpm/AppImage, DMG) + plain CLI/MCP
+  # binaries + a Windows portable zip, all attached to one GitHub Release.
+  # tauri-action creates the draft release on the tag automatically.
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            plain_target: x86_64-pc-windows-msvc
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            plain_target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: universal-apple-darwin
+            plain_target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev librsvg2-dev patchelf \
+            libsoup-3.0-dev libjavascriptcoregtk-4.1-dev rpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin, x86_64-unknown-linux-gnu, x86_64-pc-windows-msvc
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      # generate_context! embeds frontend/dist at compile time — build it first
+      - name: build frontend bundle
+        run: npm --prefix frontend run build
+
+      - name: engine tests
+        run: cargo test --lib
+
+      - name: plain binaries (CLI + MCP)
+        run: cargo build --release --target ${{ matrix.plain_target }} --bins
+
+      - name: stage extra artifacts
+        shell: bash
+        run: |
+          mkdir -p dist-extra
+          triple=${{ matrix.plain_target }}
+          ext=""; [ "$triple" = "x86_64-pc-windows-msvc" ] && ext=".exe"
+          for b in ipscanner-craft-cli ipscanner-craft-mcp; do
+            cp "target/$triple/release/$b$ext" "dist-extra/${b}-${triple}$ext"
+          done
+          # Windows portable bundle: GUI exe + CLI + MCP side by side
+          if [ "$triple" = "x86_64-pc-windows-msvc" ]; then
+            mkdir -p portable
+            cp "target/$triple/release/ipscanner-craft.exe" portable/IPScannerCraft.exe
+            cp dist-extra/ipscanner-craft-cli-x86_64-pc-windows-msvc.exe portable/ipscanner-craft-cli.exe
+            cp dist-extra/ipscanner-craft-mcp-x86_64-pc-windows-msvc.exe portable/ipscanner-craft-mcp.exe
+            cp README.md portable/
+            7z a -tzip "dist-extra/ipscanner-craft-portable-win64.zip" portable/
+          fi
+          ls -la dist-extra
+
+      - name: tauri build (installers -> GitHub Release)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --target ${{ matrix.target }}
+          uploadRawBundle: true
+
+      - name: attach CLI/MCP binaries to the release draft
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-extra/*
+          fail_on_unmatched_files: false
+          draft: true
+
+  # Android: universal debug-signed APK, installable over adb/sideload.
+  # The project is a mobile-ready Tauri app (mobile_entry_point present);
+  # CI regenerates gen/android, so the repo stays clean.
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r27
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
+
+      - name: install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: init android project
+        run: npx --yes @tauri-apps/cli@^2 android init
+
+      - name: build apk
+        env:
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: npx --yes @tauri-apps/cli@^2 android build --apk --split-per-abi
+
+      - name: stage apks
+        shell: bash
+        run: |
+          mkdir -p dist-android
+          # flat layout puts the project at repo root (gen/android), standard at
+          # src-tauri/gen/android; search both.
+          find . -path ./target -prune -o -type f -name "*.apk" -print -exec cp {} dist-android/ \;
+          ls -la dist-android
+          test -n "$(ls -A dist-android)" || { echo "no APK produced"; exit 1; }
+
+      - name: attach apks to the release draft
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-android/*.apk
+          fail_on_unmatched_files: false
+          draft: true

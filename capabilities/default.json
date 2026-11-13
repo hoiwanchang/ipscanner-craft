@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Main window: core APIs and the native save dialog used by export.",
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:allow-save"]
+}

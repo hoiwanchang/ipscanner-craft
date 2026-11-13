@@ -1,0 +1,7 @@
+/target
+/frontend/node_modules
+/frontend/dist
+/gen/schemas
+.DS_Store
+*.enc
+data/
